@@ -1,22 +1,68 @@
-"""Login screen with GitHub OAuth support."""
+"""Login screen with Google OAuth support."""
 
 import asyncio
 import webbrowser
+import socket
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
+from threading import Thread
 from textual.app import ComposeResult
 from textual.screen import Screen
-from textual.widgets import Static, Input, Button
-from textual.containers import Vertical, Container, Horizontal
+from textual.widgets import Static, Button
+from textual.containers import Container
 from textual.binding import Binding
 from rich.text import Text
-from rich.panel import Panel
-from rich.align import Align
 
 from client.api_client import get_api_client
 from client.config import ClientConfig
 
 
+def find_free_port() -> int:
+    """Find a free port on localhost."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+class OAuthCallbackHandler(BaseHTTPRequestHandler):
+    """HTTP handler for OAuth callback."""
+
+    def log_message(self, format, *args):
+        pass  # Suppress logging
+
+    def do_GET(self):
+        """Handle GET request from OAuth redirect."""
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+
+        self.server.auth_code = params.get("code", [None])[0]
+        self.server.auth_state = params.get("state", [None])[0]
+        self.server.auth_error = params.get("error", [None])[0]
+
+        # Send response to browser
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
+        if self.server.auth_code:
+            html = """
+            <html><body style="font-family: sans-serif; text-align: center; padding: 50px;">
+            <h1>Login Successful!</h1>
+            <p>You can close this window and return to the terminal.</p>
+            </body></html>
+            """
+        else:
+            html = """
+            <html><body style="font-family: sans-serif; text-align: center; padding: 50px;">
+            <h1>Login Failed</h1>
+            <p>Please try again in the terminal.</p>
+            </body></html>
+            """
+        self.wfile.write(html.encode())
+
+
 class LoginScreen(Screen):
-    """Login screen with GitHub OAuth and offline mode."""
+    """Login screen with Google OAuth and offline mode."""
 
     BINDINGS = [
         Binding("escape", "quit", "Quit"),
@@ -50,20 +96,20 @@ class LoginScreen(Screen):
         color: #818384;
     }
 
-    #github-section {
+    #google-section {
         width: 100%;
         height: auto;
         padding: 1 0;
     }
 
-    #github-button {
+    #google-button {
         width: 100%;
     }
 
-    #github-status {
+    #google-status {
         width: 100%;
         height: auto;
-        min-height: 5;
+        min-height: 3;
         content-align: center middle;
         padding: 1;
         margin-top: 1;
@@ -106,19 +152,18 @@ class LoginScreen(Screen):
         super().__init__(**kwargs)
         self.api_url = api_url
         self.server_online = False
-        self.github_available = False
-        self._polling = False
-        self._device_code = None
+        self.google_available = False
         self._config = ClientConfig()
+        self._oauth_state = None
 
     def compose(self) -> ComposeResult:
         with Container(id="login-container"):
             yield Static(id="login-title")
             yield Static("[#818384]Play Wordle every day![/]", id="login-subtitle")
 
-            with Container(id="github-section"):
-                yield Button("🔗 Login with GitHub", id="github-button", variant="primary")
-                yield Static(id="github-status")
+            with Container(id="google-section"):
+                yield Button("Login with Google", id="google-button", variant="primary")
+                yield Static(id="google-status")
 
             yield Static("[#3a3a3c]─────────── or ───────────[/]", id="divider")
 
@@ -140,7 +185,7 @@ class LoginScreen(Screen):
         title.update(Text.from_markup(logo))
 
     async def _check_server(self) -> None:
-        """Check if server is available and GitHub OAuth is configured."""
+        """Check if server is available and Google OAuth is configured."""
         status = self.query_one("#server-status", Static)
         status.update(Text.from_markup("[#c9b458]Checking server...[/]"))
 
@@ -149,133 +194,145 @@ class LoginScreen(Screen):
 
         if self.server_online:
             status.update(Text.from_markup("[#6aaa64]● Server online[/]"))
-            # Check if GitHub OAuth is available by trying to get device code
+            # Check if Google OAuth is available
             try:
-                response = await client._client.post(
-                    f"{self.api_url}/auth/github/device-code",
+                response = await client._client.get(
+                    f"{self.api_url}/auth/google/status",
                     timeout=5.0,
                 )
-                self.github_available = response.status_code == 200
+                if response.status_code == 200:
+                    data = response.json()
+                    self.google_available = data.get("configured", False)
             except Exception:
-                self.github_available = False
+                self.google_available = False
 
-            if not self.github_available:
-                github_btn = self.query_one("#github-button", Button)
-                github_btn.disabled = True
-                github_btn.label = "GitHub Login (Not configured)"
+            if not self.google_available:
+                google_btn = self.query_one("#google-button", Button)
+                google_btn.disabled = True
+                google_btn.label = "Google Login (Not configured)"
         else:
             status.update(Text.from_markup("[#787c7e]○ Server offline[/]"))
-            github_btn = self.query_one("#github-button", Button)
-            github_btn.disabled = True
-            github_btn.label = "GitHub Login (Server offline)"
+            google_btn = self.query_one("#google-button", Button)
+            google_btn.disabled = True
+            google_btn.label = "Google Login (Server offline)"
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "github-button":
-            await self._start_github_login()
+        if event.button.id == "google-button":
+            await self._start_google_login()
         elif event.button.id == "offline-button":
             self._play_offline()
 
-    async def _start_github_login(self) -> None:
-        """Start GitHub device flow."""
-        if not self.server_online:
+    async def _start_google_login(self) -> None:
+        """Start Google OAuth flow with localhost redirect."""
+        if not self.server_online or not self.google_available:
             return
 
-        github_status = self.query_one("#github-status", Static)
-        github_status.update(Text.from_markup("[#c9b458]Getting code...[/]"))
+        google_status = self.query_one("#google-status", Static)
+        google_status.update(Text.from_markup("[#c9b458]Opening browser...[/]"))
 
         client = get_api_client(self.api_url)
 
         try:
-            response = await client._client.post(
-                f"{self.api_url}/auth/github/device-code",
+            # Find free port and create redirect URI
+            port = find_free_port()
+            redirect_uri = f"http://localhost:{port}/callback"
+
+            # Get auth URL from server
+            response = await client._client.get(
+                f"{self.api_url}/auth/google/auth-url",
+                params={"redirect_uri": redirect_uri},
             )
 
             if response.status_code != 200:
-                github_status.update(Text.from_markup("[#787c7e]Failed to start GitHub login[/]"))
+                google_status.update(Text.from_markup("[#787c7e]Failed to start login[/]"))
                 return
 
             data = response.json()
-            self._device_code = data["device_code"]
-            user_code = data["user_code"]
-            verification_uri = data["verification_uri"]
-            interval = data.get("interval", 5)
+            auth_url = data["auth_url"]
+            self._oauth_state = data["state"]
 
-            # Show code to user - BIG and CLEAR
-            code_display = (
-                f"[bold #c9b458]━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n"
-                f"[bold white]   YOUR CODE: [#6aaa64]{user_code}[/]   [/]\n"
-                f"[bold #c9b458]━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n\n"
-                f"[#818384]Go to: {verification_uri}[/]\n"
-                f"[#565758]Waiting for authorization...[/]"
-            )
-            github_status.update(Text.from_markup(code_display))
+            # Start local HTTP server to receive callback
+            server = HTTPServer(("localhost", port), OAuthCallbackHandler)
+            server.auth_code = None
+            server.auth_state = None
+            server.auth_error = None
+            server.timeout = 120  # 2 minutes timeout
+
+            google_status.update(Text.from_markup(
+                "[#c9b458]Waiting for Google login...[/]\n"
+                "[#565758]A browser window should open.[/]"
+            ))
 
             # Open browser
-            webbrowser.open(verification_uri)
+            webbrowser.open(auth_url)
 
-            # Start polling
-            self._polling = True
-            await self._poll_for_token(interval)
+            # Wait for callback in a thread
+            def wait_for_callback():
+                server.handle_request()
 
-        except Exception as e:
-            github_status.update(Text.from_markup(f"[#787c7e]Error: {str(e)}[/]"))
+            thread = Thread(target=wait_for_callback, daemon=True)
+            thread.start()
 
-    async def _poll_for_token(self, interval: int) -> None:
-        """Poll for GitHub token."""
-        github_status = self.query_one("#github-status", Static)
-        client = get_api_client(self.api_url)
+            # Poll for result
+            for _ in range(120):  # 2 minutes max
+                await asyncio.sleep(1)
+                if server.auth_code or server.auth_error:
+                    break
 
-        for _ in range(60):  # Max 5 minutes
-            if not self._polling:
+            if server.auth_error:
+                google_status.update(Text.from_markup(
+                    f"[#787c7e]Login cancelled or failed[/]"
+                ))
                 return
 
-            await asyncio.sleep(interval)
+            if not server.auth_code:
+                google_status.update(Text.from_markup("[#787c7e]Login timed out[/]"))
+                return
 
-            try:
-                response = await client._client.post(
-                    f"{self.api_url}/auth/github/poll-token",
-                    json={"device_code": self._device_code},
-                )
+            # Exchange code for token
+            google_status.update(Text.from_markup("[#c9b458]Completing login...[/]"))
 
-                if response.status_code != 200:
-                    continue
+            callback_response = await client._client.post(
+                f"{self.api_url}/auth/google/callback",
+                json={
+                    "code": server.auth_code,
+                    "state": server.auth_state,
+                    "redirect_uri": redirect_uri,
+                },
+            )
 
-                data = response.json()
-                status = data.get("status")
+            if callback_response.status_code != 200:
+                google_status.update(Text.from_markup("[#787c7e]Failed to complete login[/]"))
+                return
 
-                if status == "authorized":
-                    # Save token locally for auto-login
-                    self._config.save(data["username"], data["token"])
+            result = callback_response.json()
 
-                    github_status.update(Text.from_markup(
-                        f"[bold #6aaa64]✓ Welcome, {data['username']}![/]"
-                    ))
-                    await asyncio.sleep(1)
-                    self.dismiss({
-                        "username": data["username"],
-                        "token": data["token"],
-                        "streak": 0,  # Will be fetched after
-                    })
-                    return
-                elif status == "expired":
-                    github_status.update(Text.from_markup("[#787c7e]Code expired. Try again.[/]"))
-                    return
-                elif status == "error":
-                    github_status.update(Text.from_markup(f"[#787c7e]{data.get('error', 'Error')}[/]"))
-                    return
-                # status == "pending" - continue polling
+            if result.get("success"):
+                # Save token locally
+                self._config.save(result["username"], result["token"])
 
-            except Exception:
-                pass
+                google_status.update(Text.from_markup(
+                    f"[bold #6aaa64]✓ Welcome, {result['username']}![/]"
+                ))
+                await asyncio.sleep(1)
+                self.dismiss({
+                    "username": result["username"],
+                    "token": result["token"],
+                    "streak": 0,
+                })
+            else:
+                google_status.update(Text.from_markup(
+                    f"[#787c7e]{result.get('error', 'Login failed')}[/]"
+                ))
 
-        github_status.update(Text.from_markup("[#787c7e]Timeout. Try again.[/]"))
+        except Exception as e:
+            google_status.update(Text.from_markup(f"[#787c7e]Error: {str(e)}[/]"))
 
     def _play_offline(self) -> None:
         """Start offline game."""
         self.dismiss({"username": "Player", "token": None, "streak": 0})
 
     def action_submit(self) -> None:
-        # Default to offline if enter is pressed
         self._play_offline()
 
     def action_quit(self) -> None:

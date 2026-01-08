@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
     environment: str = "development"
 
-    # GitHub OAuth (optional - for device flow login)
-    github_client_id: Optional[str] = None
-    github_client_secret: Optional[str] = None
+    # Google OAuth (for localhost redirect login)
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
 
     # Admin API (set a strong secret key!)
     admin_secret_key: str = "change-this-admin-secret-key"

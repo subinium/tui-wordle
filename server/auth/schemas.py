@@ -10,7 +10,7 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
-    github_id: Optional[int] = None
+    google_id: Optional[str] = None
     avatar_url: Optional[str] = None
     created_at: datetime
 
@@ -24,21 +24,20 @@ class TokenResponse(BaseModel):
     token: str
 
 
-# GitHub OAuth Device Flow
-class GitHubDeviceCodeResponse(BaseModel):
-    device_code: str
-    user_code: str
-    verification_uri: str
-    expires_in: int
-    interval: int
+# Google OAuth
+class GoogleAuthUrlResponse(BaseModel):
+    auth_url: str
+    state: str
 
 
-class GitHubTokenRequest(BaseModel):
-    device_code: str
+class GoogleCallbackRequest(BaseModel):
+    code: str
+    state: str
+    redirect_uri: str
 
 
-class GitHubTokenResponse(BaseModel):
-    status: str  # "pending", "authorized", "expired", "error"
+class GoogleCallbackResponse(BaseModel):
+    success: bool
     user_id: Optional[int] = None
     username: Optional[str] = None
     token: Optional[str] = None

@@ -106,7 +106,7 @@ async def get_users(
         users.append({
             "id": user.id,
             "username": user.username,
-            "github_id": user.github_id,
+            "google_id": user.google_id,
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "total_games": streak.total_games if streak else 0,
             "total_wins": streak.total_wins if streak else 0,
@@ -196,7 +196,7 @@ async def get_user_detail(
         "user": {
             "id": user.id,
             "username": user.username,
-            "github_id": user.github_id,
+            "google_id": user.google_id,
             "created_at": user.created_at.isoformat() if user.created_at else None,
         },
         "stats": {

@@ -1,4 +1,6 @@
 import httpx
+import secrets
+from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.database import get_db
@@ -6,14 +8,19 @@ from server.config import get_settings
 from server.auth.schemas import (
     UserCreate,
     TokenResponse,
-    GitHubDeviceCodeResponse,
-    GitHubTokenRequest,
-    GitHubTokenResponse,
+    GoogleAuthUrlResponse,
+    GoogleCallbackRequest,
+    GoogleCallbackResponse,
 )
-from server.auth.service import create_or_get_user, create_or_get_github_user
+from server.auth.service import create_or_get_user, create_or_get_google_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 settings = get_settings()
+
+# Google OAuth endpoints
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -23,105 +30,109 @@ async def login(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     return TokenResponse(id=user.id, username=user.username, token=token)
 
 
-@router.post("/github/device-code", response_model=GitHubDeviceCodeResponse)
-async def github_device_code():
-    """Start GitHub device flow - get a user code to show."""
-    if not settings.github_client_id:
-        raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
+@router.get("/google/auth-url", response_model=GoogleAuthUrlResponse)
+async def google_auth_url(redirect_uri: str):
+    """Get Google OAuth authorization URL."""
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
+
+    state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+
+    auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+    return GoogleAuthUrlResponse(auth_url=auth_url, state=state)
+
+
+@router.post("/google/callback", response_model=GoogleCallbackResponse)
+async def google_callback(
+    request: GoogleCallbackRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle Google OAuth callback - exchange code for token and get user info."""
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
 
     async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://github.com/login/device/code",
-            headers={"Accept": "application/json"},
+        # Exchange code for tokens
+        token_response = await client.post(
+            GOOGLE_TOKEN_URL,
             data={
-                "client_id": settings.github_client_id,
-                "scope": "read:user",
+                "client_id": settings.google_client_id,
+                "client_secret": settings.google_client_secret,
+                "code": request.code,
+                "grant_type": "authorization_code",
+                "redirect_uri": request.redirect_uri,
             },
         )
 
-        if response.status_code != 200:
-            raise HTTPException(status_code=502, detail="Failed to get device code from GitHub")
+        if token_response.status_code != 200:
+            return GoogleCallbackResponse(
+                success=False,
+                error=f"Failed to exchange code: {token_response.text}"
+            )
 
-        data = response.json()
-        return GitHubDeviceCodeResponse(
-            device_code=data["device_code"],
-            user_code=data["user_code"],
-            verification_uri=data["verification_uri"],
-            expires_in=data["expires_in"],
-            interval=data["interval"],
-        )
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
 
-
-@router.post("/github/poll-token", response_model=GitHubTokenResponse)
-async def github_poll_token(request: GitHubTokenRequest, db: AsyncSession = Depends(get_db)):
-    """Poll GitHub for access token after user authorizes."""
-    if not settings.github_client_id:
-        raise HTTPException(status_code=503, detail="GitHub OAuth not configured")
-
-    async with httpx.AsyncClient() as client:
-        # Exchange device code for access token
-        response = await client.post(
-            "https://github.com/login/oauth/access_token",
-            headers={"Accept": "application/json"},
-            data={
-                "client_id": settings.github_client_id,
-                "device_code": request.device_code,
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-            },
-        )
-
-        if response.status_code != 200:
-            return GitHubTokenResponse(status="error", error="GitHub request failed")
-
-        data = response.json()
-
-        # Check for errors
-        if "error" in data:
-            error = data["error"]
-            if error == "authorization_pending":
-                return GitHubTokenResponse(status="pending")
-            elif error == "slow_down":
-                return GitHubTokenResponse(status="pending")
-            elif error == "expired_token":
-                return GitHubTokenResponse(status="expired", error="Code expired")
-            elif error == "access_denied":
-                return GitHubTokenResponse(status="error", error="Access denied")
-            else:
-                return GitHubTokenResponse(status="error", error=data.get("error_description", error))
-
-        # Got access token - get user info
-        access_token = data.get("access_token")
         if not access_token:
-            return GitHubTokenResponse(status="error", error="No access token received")
+            return GoogleCallbackResponse(
+                success=False,
+                error="No access token received"
+            )
 
-        # Fetch GitHub user info
-        user_response = await client.get(
-            "https://api.github.com/user",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github+json",
-            },
+        # Get user info
+        userinfo_response = await client.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
         )
 
-        if user_response.status_code != 200:
-            return GitHubTokenResponse(status="error", error="Failed to get user info")
+        if userinfo_response.status_code != 200:
+            return GoogleCallbackResponse(
+                success=False,
+                error="Failed to get user info"
+            )
 
-        github_user = user_response.json()
-        github_id = github_user["id"]
-        github_username = github_user["login"]
-        avatar_url = github_user.get("avatar_url")
+        userinfo = userinfo_response.json()
+        google_id = userinfo.get("id")
+        email = userinfo.get("email")
+        name = userinfo.get("name")
+        avatar_url = userinfo.get("picture")
 
-        # Create or get our user
-        user, token = await create_or_get_github_user(
+        if not google_id or not email:
+            return GoogleCallbackResponse(
+                success=False,
+                error="Invalid user info from Google"
+            )
+
+        # Create or get user
+        user, token = await create_or_get_google_user(
             db,
-            github_id=github_id,
-            username=github_username,
+            google_id=google_id,
+            email=email,
+            name=name,
             avatar_url=avatar_url,
         )
 
-        return GitHubTokenResponse(
-            status="authorized",
+        return GoogleCallbackResponse(
+            success=True,
             user_id=user.id,
             username=user.username,
             token=token,
         )
+
+
+@router.get("/google/status")
+async def google_status():
+    """Check if Google OAuth is configured."""
+    return {
+        "configured": bool(settings.google_client_id and settings.google_client_secret)
+    }

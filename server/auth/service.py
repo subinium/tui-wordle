@@ -26,20 +26,25 @@ async def create_or_get_user(db: AsyncSession, username: str) -> tuple[User, str
     return user, token
 
 
-async def create_or_get_github_user(
+async def create_or_get_google_user(
     db: AsyncSession,
-    github_id: int,
-    username: str,
+    google_id: str,
+    email: str,
+    name: str | None = None,
     avatar_url: str | None = None,
 ) -> tuple[User, str]:
-    """Create or get user by GitHub ID."""
-    # First try to find by GitHub ID
-    result = await db.execute(select(User).where(User.github_id == github_id))
+    """Create or get user by Google ID."""
+    # First try to find by Google ID
+    result = await db.execute(select(User).where(User.google_id == google_id))
     user = result.scalar_one_or_none()
 
     if user is None:
+        # Use name or email prefix as username
+        base_username = name or email.split("@")[0]
+        # Clean username (alphanumeric and underscore only)
+        base_username = "".join(c if c.isalnum() or c == "_" else "_" for c in base_username)[:30]
+
         # Check if username exists, add suffix if needed
-        base_username = username
         suffix = 0
         while True:
             check_username = base_username if suffix == 0 else f"{base_username}_{suffix}"
@@ -51,7 +56,7 @@ async def create_or_get_github_user(
 
         user = User(
             username=username,
-            github_id=github_id,
+            google_id=google_id,
             avatar_url=avatar_url,
         )
         db.add(user)
