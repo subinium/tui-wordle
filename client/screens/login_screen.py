@@ -51,23 +51,28 @@ class LoginScreen(Screen):
         overflow: hidden;
     }
 
-    #github-section {
+    #username-section {
         width: 100%;
         height: auto;
         padding: 1 0;
         overflow: hidden;
     }
 
-    #github-button {
+    #username-input {
         width: 100%;
-        margin-top: 1;
+        margin-bottom: 1;
     }
 
-    #github-status {
+    #username-button {
         width: 100%;
-        height: auto;
+    }
+
+    #username-status {
+        width: 100%;
+        height: 1;
         content-align: center middle;
-        padding: 1 0;
+        color: #818384;
+        margin-top: 1;
         overflow: hidden;
     }
 
