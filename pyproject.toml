@@ -1,6 +1,6 @@
 [project]
 name = "tui-wordle"
-version = "0.1.0"
+version = "0.1.1"
 description = "Beautiful terminal-based Wordle game with shared leaderboard"
 readme = "README.md"
 requires-python = ">=3.11"
