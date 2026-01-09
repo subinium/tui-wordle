@@ -22,6 +22,7 @@ from client.screens.leaderboard_screen import LeaderboardScreen
 from client.screens.result_screen import ResultScreen
 from client.screens.help_screen import HelpScreen
 from client.screens.settings_screen import SettingsScreen
+from client.version import __version__
 
 
 # Load valid words once
@@ -76,25 +77,25 @@ class GameHeader(Static):
         self.timer_running = False
 
     def render(self) -> Text:
-        # Line 1: Title and user info
-        title = "[bold white]W O R D L E[/]"
+        # Line 1: Title and version
+        title = f"[bold white]W O R D L E[/]  [#565758]v{__version__}[/]"
+
+        # Line 2: User info and timers
         user_parts = []
         if self.username:
             user_parts.append(f"[#6aaa64]{self.username}[/]")
         if self.streak > 0:
             user_parts.append(f"[#ff6b35]🔥{self.streak}[/]")
 
-        line1 = f"{title}  {'  '.join(user_parts)}" if user_parts else title
-
-        # Line 2: Timers
         mins = self.elapsed_seconds // 60
         secs = self.elapsed_seconds % 60
         timer_str = f"⏱ {mins}:{secs:02d}"
         next_word_time = get_time_until_next_word()
 
-        line2 = f"[#c9b458]{timer_str}[/]  [#818384]Next: {next_word_time}[/]"
+        line2_parts = user_parts + [f"[#c9b458]{timer_str}[/]", f"[#818384]Next: {next_word_time}[/]"]
+        line2 = "  ".join(line2_parts)
 
-        return Text.from_markup(f"{line1}\n{line2}")
+        return Text.from_markup(f"{title}\n{line2}")
 
     def set_info(self, username: str = "", streak: int = 0) -> None:
         self.username = username

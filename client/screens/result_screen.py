@@ -10,6 +10,7 @@ from rich.text import Text
 
 from client.api_client import get_api_client
 from client.screens.settings_screen import SettingsScreen
+from client.version import __version__
 
 
 class ResultScreen(ModalScreen):
@@ -24,6 +25,7 @@ class ResultScreen(ModalScreen):
         Binding("4", "tab_settings", "Settings", show=False),
         Binding("left", "prev_tab", "Previous Tab", show=False),
         Binding("right", "next_tab", "Next Tab", show=False),
+        Binding("e", "edit_profile", "Edit Profile", show=False),
         Binding("l", "logout", "Logout", show=False),
     ]
 
@@ -124,8 +126,9 @@ class ResultScreen(ModalScreen):
         self._render_leaderboard()
         self._render_settings()
         self._render_footer()
-        # Fetch real leaderboard data
+        # Fetch real data from API
         asyncio.create_task(self._fetch_leaderboard())
+        asyncio.create_task(self._fetch_personal_stats())
 
     def _render_header(self) -> None:
         header = self.query_one("#result-header", Static)
@@ -138,12 +141,12 @@ class ResultScreen(ModalScreen):
             msg = messages[min(attempts - 1, 5)]
             header.update(Text.from_markup(
                 f"[bold #6aaa64]🎉 {msg} 🎉[/]\n"
-                f"[#6aaa64]{username}[/]"
+                f"[#6aaa64]{username}[/]  [#565758]v{__version__}[/]"
             ))
         else:
             header.update(Text.from_markup(
                 f"[bold #787c7e]😔 Better luck next time![/]\n"
-                f"[#818384]{username}[/]"
+                f"[#818384]{username}[/]  [#565758]v{__version__}[/]"
             ))
 
     def _render_result(self) -> None:
@@ -251,6 +254,36 @@ class ResultScreen(ModalScreen):
         except Exception:
             pass
 
+    async def _fetch_personal_stats(self) -> None:
+        """Fetch real personal stats from API."""
+        if not self.api_url or not self.token:
+            return
+
+        try:
+            client = get_api_client(self.api_url)
+            # Set up auth
+            from client.api_client import UserSession
+            client.session = UserSession(
+                user_id=0,
+                username=self.result_data.get("username", "Player"),
+                token=self.token,
+            )
+            data = await client.get_personal_stats()
+            if data:
+                # Update personal_stats in result_data
+                self.result_data["personal_stats"] = {
+                    "total_games": data.get("total_games", 0),
+                    "total_wins": data.get("total_wins", 0),
+                    "win_rate": data.get("win_rate", 0),
+                    "current_streak": data.get("current_streak", 0),
+                    "longest_streak": data.get("longest_streak", 0),
+                    "avg_attempts": data.get("avg_attempts", 0),
+                    "attempts_distribution": data.get("attempts_distribution", {}),
+                }
+                self._render_stats()
+        except Exception:
+            pass
+
     def _render_leaderboard(self) -> None:
         content = self.query_one("#leaderboard-content", Static)
 
@@ -315,6 +348,7 @@ class ResultScreen(ModalScreen):
                 "",
                 "[#818384]─────────────────────────────────[/]",
                 "",
+                "[#6aaa64]Press E to edit profile[/]",
                 "[#c9b458]Press L to logout[/]",
             ])
         else:
@@ -363,6 +397,32 @@ class ResultScreen(ModalScreen):
     def action_tab_settings(self) -> None:
         tabs = self.query_one("#tabs", TabbedContent)
         tabs.active = "tab-settings"
+
+    def action_edit_profile(self) -> None:
+        """Open profile edit screen."""
+        if self.token:
+            self.app.push_screen(
+                SettingsScreen(
+                    username=self.result_data.get("username", "Player"),
+                    email=self.email,
+                    token=self.token,
+                    api_url=self.api_url,
+                ),
+                self._on_settings_result,
+            )
+
+    def _on_settings_result(self, result: dict | None) -> None:
+        """Handle settings screen result."""
+        if result is None:
+            return
+
+        if result.get("action") == "logout":
+            self.app.exit()
+        elif result.get("action") == "updated":
+            # Update username in result_data and re-render
+            self.result_data["username"] = result.get("username", self.result_data.get("username"))
+            self._render_header()
+            self._render_settings()
 
     def action_logout(self) -> None:
         """Logout and exit."""

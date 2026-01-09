@@ -15,6 +15,7 @@ from rich.text import Text
 
 from client.api_client import get_api_client
 from client.config import ClientConfig
+from client.version import __version__
 
 
 def find_free_port() -> int:
@@ -179,9 +180,9 @@ class LoginScreen(Screen):
 
     def _render_title(self) -> None:
         title = self.query_one("#login-title", Static)
-        logo = """[bold white]╦ ╦╔═╗╦═╗╔╦╗╦  ╔═╗
-║║║║ ║╠╦╝ ║║║  ║╣
-╚╩╝╚═╝╩╚══╩╝╩═╝╚═╝[/]"""
+        logo = f"""[bold white]╦ ╦╔═╗╦═╗╔╦╗╦  ╔═╗[/]  [#565758]v{__version__}[/]
+[bold white]║║║║ ║╠╦╝ ║║║  ║╣[/]
+[bold white]╚╩╝╚═╝╩╚══╩╝╩═╝╚═╝[/]"""
         title.update(Text.from_markup(logo))
 
     async def _check_server(self) -> None:
