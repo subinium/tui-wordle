@@ -71,8 +71,6 @@ async def google_auth_url(redirect_uri: str):
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
-        "access_type": "offline",
-        "prompt": "consent",
     }
 
     auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"

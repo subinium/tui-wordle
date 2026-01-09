@@ -233,8 +233,8 @@ class LoginScreen(Screen):
         client = get_api_client(self.api_url)
 
         try:
-            # Find free port and create redirect URI
-            port = find_free_port()
+            # Use fixed port for OAuth callback (must be registered in Google Console)
+            port = 9876
             redirect_uri = f"http://localhost:{port}/callback"
 
             # Get auth URL from server
