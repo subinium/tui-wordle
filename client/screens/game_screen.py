@@ -381,21 +381,67 @@ class GameScreen(Screen):
         self.app.exit()
 
     def action_stats(self) -> None:
-        # Local stats (will connect to server later)
-        stats = {
-            "total_games": len(self.board.guesses) if self.game_over else 0,
-            "total_wins": 1 if self.won else 0,
-            "win_rate": 100.0 if self.won else 0.0,
-            "current_streak": self.streak,
-            "longest_streak": self.streak,
-            "avg_attempts": len(self.board.guesses) if self.game_over else 0,
-            "attempts_distribution": self._get_local_distribution(),
-        }
+        asyncio.create_task(self._show_stats())
+
+    async def _show_stats(self) -> None:
+        """Fetch and show stats from server."""
+        stats = None
+        if self._api_client:
+            try:
+                personal = await self._api_client.get_personal_stats()
+                if personal:
+                    # Also fetch game history for contribution graph
+                    contribution = await self._api_client.get_contribution_data()
+                    stats = {
+                        "total_games": personal.get("total_games", 0),
+                        "total_wins": personal.get("total_wins", 0),
+                        "win_rate": personal.get("win_rate", 0.0),
+                        "current_streak": personal.get("current_streak", 0),
+                        "longest_streak": personal.get("longest_streak", 0),
+                        "avg_attempts": personal.get("avg_attempts", 0.0),
+                        "attempts_distribution": personal.get("attempts_distribution", {}),
+                        "game_history": contribution or [],
+                    }
+            except Exception:
+                pass
+
+        if not stats:
+            # Fallback to local stats
+            stats = {
+                "total_games": len(self.board.guesses) if self.game_over else 0,
+                "total_wins": 1 if self.won else 0,
+                "win_rate": 100.0 if self.won else 0.0,
+                "current_streak": self.streak,
+                "longest_streak": self.streak,
+                "avg_attempts": len(self.board.guesses) if self.game_over else 0,
+                "attempts_distribution": self._get_local_distribution(),
+            }
+
         self.app.push_screen(StatsScreen(stats=stats))
 
     def action_leaderboard(self) -> None:
-        # Demo leaderboard (will connect to server later)
-        self.app.push_screen(LeaderboardScreen())
+        asyncio.create_task(self._show_leaderboard())
+
+    async def _show_leaderboard(self) -> None:
+        """Fetch and show leaderboard from server."""
+        entries = None
+        if self._api_client:
+            try:
+                data = await self._api_client.get_leaderboard(limit=20)
+                if data:
+                    entries = [
+                        {
+                            "rank": i + 1,
+                            "username": e.get("username", "???"),
+                            "attempts": e.get("attempts", 0),
+                            "time_seconds": e.get("time_seconds"),
+                        }
+                        for i, e in enumerate(data)
+                    ]
+            except Exception:
+                pass
+
+        self.app.push_screen(LeaderboardScreen(entries=entries))
 
     def action_help(self) -> None:
         self.app.push_screen(HelpScreen())

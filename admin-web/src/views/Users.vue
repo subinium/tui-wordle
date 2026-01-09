@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { getUsers, type User } from '../api'
+import { getUsers, deleteUser, type User } from '../api'
 
 const users = ref<User[]>([])
 const isLoading = ref(true)
@@ -16,6 +16,18 @@ async function loadUsers() {
     console.error('Failed to load users', e)
   }
   isLoading.value = false
+}
+
+async function handleDelete(user: User) {
+  if (!confirm(`Delete user "${user.username}"?\n\nThis will delete all their games, streaks, and data. This cannot be undone.`)) {
+    return
+  }
+  try {
+    await deleteUser(user.id)
+    users.value = users.value.filter(u => u.id !== user.id)
+  } catch (e) {
+    alert('Failed to delete user: ' + (e as Error).message)
+  }
 }
 
 function formatDate(dateStr: string | null): string {
@@ -46,6 +58,7 @@ onMounted(loadUsers)
           <th>Wins</th>
           <th>Streak</th>
           <th>Joined</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
@@ -57,8 +70,26 @@ onMounted(loadUsers)
           <td>{{ user.total_wins }}</td>
           <td>{{ user.current_streak }}</td>
           <td>{{ formatDate(user.created_at) }}</td>
+          <td>
+            <button class="btn-delete" @click="handleDelete(user)">Delete</button>
+          </td>
         </tr>
       </tbody>
     </table>
   </div>
 </template>
+
+<style scoped>
+.btn-delete {
+  background: #da3633;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.btn-delete:hover {
+  background: #f85149;
+}
+</style>

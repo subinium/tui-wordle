@@ -234,7 +234,9 @@ class WordleAPIClient:
                 headers=self.headers,
             )
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                # Response is {"data": [...]}
+                return data.get("data", [])
         except Exception:
             pass
         return []

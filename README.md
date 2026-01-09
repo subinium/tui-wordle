@@ -1,6 +1,6 @@
 # TUI Wordle
 
-Beautiful terminal-based Wordle game with shared leaderboard, streaks, and GitHub login.
+Beautiful terminal-based Wordle game with shared leaderboard and streaks.
 
 ```
 ╦ ╦╔═╗╦═╗╔╦╗╦  ╔═╗
@@ -10,51 +10,32 @@ Beautiful terminal-based Wordle game with shared leaderboard, streaks, and GitHu
 
 ## Features
 
-- Daily Wordle with 365 unique words per year
-- GitHub OAuth login
-- Shared leaderboard
+- Daily Wordle with unique words each day
+- Google login (one-click browser auth)
+- Shared leaderboard with daily rankings
 - Personal statistics & streaks
 - GitHub-style contribution graph
-- Beautiful TUI with Wordle colors
-- Keyboard with letter state indicators
+- Auto-save (resume your game anytime)
+- Beautiful TUI with animations
 - Works offline too!
 
 ## Installation
 
-### pip
-
 ```bash
+# pip
 pip install tui-wordle
-```
 
-### uv (Recommended)
-
-```bash
+# uv (Recommended)
 uv tool install tui-wordle
-```
 
-### pipx
-
-```bash
+# pipx
 pipx install tui-wordle
 ```
 
-### From source
+## Play
 
 ```bash
-git clone https://github.com/subinium/tui-wordle.git
-cd tui-wordle
-pip install -e .
-```
-
-## Usage
-
-```bash
-# Play the game
 wordle
-
-# Or use the full name
-tui-wordle
 ```
 
 ## Controls
@@ -64,76 +45,15 @@ tui-wordle
 | A-Z | Type letter |
 | Enter | Submit guess |
 | Backspace | Delete letter |
-| ESC | Quit game |
-| F1 | View statistics |
-| F2 | View leaderboard |
-| ← → | Navigate tabs (in result screen) |
-
-## Configuration
-
-Set the API server URL:
-
-```bash
-export WORDLE_API_URL="https://your-server.com"
-```
-
-## Self-Hosting
-
-Want to run your own server?
-
-### 1. Set up Neon PostgreSQL
-
-1. Create account at [neon.tech](https://neon.tech)
-2. Create a new project
-3. Copy the connection string
-
-### 2. Deploy to Railway
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/xxx)
-
-Or manually:
-
-1. Fork this repository
-2. Connect to Railway
-3. Add environment variables:
-
-```
-DATABASE_URL=postgresql+asyncpg://...
-SECRET_KEY=your-secret-key
-GITHUB_CLIENT_ID=your-github-oauth-app-client-id
-```
-
-### 3. GitHub OAuth Setup
-
-1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. Create new OAuth App
-3. Set "Device Flow" enabled
-4. Copy Client ID to `GITHUB_CLIENT_ID`
-
-## Development
-
-```bash
-# Clone
-git clone https://github.com/subinium/tui-wordle.git
-cd tui-wordle
-
-# Create venv
-python -m venv .venv
-source .venv/bin/activate
-
-# Install with dev dependencies
-pip install -e ".[dev,server]"
-
-# Run locally
-python -m client.app
-
-# Run server
-python -m server.main
-```
+| ESC | Quit |
+| F1 | Statistics |
+| F2 | Leaderboard |
+| F3 | Help |
+| F4 | Settings |
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT
 
 ## Credits
 

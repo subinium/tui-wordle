@@ -150,6 +150,13 @@ export async function getUsers(params: { limit?: number; offset?: number }) {
   }>(`/admin/users?${query}`)
 }
 
+export async function deleteUser(userId: number) {
+  return fetchAPI<{ deleted: boolean; user_id: number }>(
+    `/admin/users/${userId}`,
+    { method: 'DELETE' }
+  )
+}
+
 // Leaderboard (All-time)
 export interface LeaderboardEntry {
   rank: number

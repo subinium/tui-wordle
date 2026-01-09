@@ -24,7 +24,7 @@ class SettingsScreen(ModalScreen):
     }
 
     #settings-container {
-        width: 50;
+        width: 60;
         height: auto;
         background: #1a1a1b;
         border: solid #3a3a3c;
@@ -73,7 +73,8 @@ class SettingsScreen(ModalScreen):
         margin-top: 1;
     }
 
-    Button {
+    #button-row Button {
+        min-width: 12;
         margin: 0 1;
     }
 

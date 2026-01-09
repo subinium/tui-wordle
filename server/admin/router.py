@@ -337,6 +337,35 @@ async def get_user_detail(
     }
 
 
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """Delete a user and all their data."""
+    from server.games.models import GameProgress
+
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Delete related data
+    await db.execute(
+        select(GameResult).where(GameResult.user_id == user_id).with_for_update()
+    )
+    from sqlalchemy import delete
+    await db.execute(delete(GameResult).where(GameResult.user_id == user_id))
+    await db.execute(delete(GameProgress).where(GameProgress.user_id == user_id))
+    await db.execute(delete(UserStreak).where(UserStreak.user_id == user_id))
+
+    # Delete user
+    await db.delete(user)
+    await db.commit()
+
+    return {"deleted": True, "user_id": user_id}
+
+
 @router.get("/daily/{target_date}")
 async def get_daily_stats(
     target_date: date,
@@ -592,3 +621,18 @@ async def serve_favicon():
         if favicon.exists():
             return FileResponse(favicon, media_type="image/svg+xml")
     raise HTTPException(status_code=404)
+
+
+@router.get("/{path:path}")
+async def serve_spa_routes(path: str):
+    """Catch-all: serve index.html for Vue SPA client-side routing."""
+    # Skip if it looks like an API call or file request
+    if path.startswith("api/") or "." in path:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    if DIST_DIR.exists():
+        index_file = DIST_DIR / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file, media_type="text/html")
+
+    raise HTTPException(status_code=404, detail="Dashboard not found")

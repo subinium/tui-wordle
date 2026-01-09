@@ -10,6 +10,7 @@ from textual.binding import Binding
 
 from client.screens.game_screen import GameScreen
 from client.screens.login_screen import LoginScreen
+from client.screens.result_screen import ResultScreen
 from client.api_client import get_api_client
 from client.config import ClientConfig
 
@@ -69,6 +70,7 @@ async def get_server_word_and_progress(token: str) -> dict:
             elif progress_data.get("completed"):
                 # Game already completed
                 result["completed"] = True
+                result["completed_result"] = progress_data.get("result", {})
     except Exception:
         pass
     return result
@@ -146,7 +148,38 @@ class WordleApp(App):
             # Fallback to local if server fails
             self.target_word = get_local_word()
 
-        self._start_game()
+        # If game is already completed, show result screen
+        if server_data.get("completed"):
+            completed_result = server_data.get("completed_result", {})
+            self._show_completed_result(completed_result)
+        else:
+            self._start_game()
+
+    def _show_completed_result(self, result: dict) -> None:
+        """Show result screen for already completed game."""
+        solved = result.get("solved", False)
+        attempts = result.get("attempts", 0)
+
+        result_data = {
+            "won": solved,
+            "attempts": attempts,
+            "target_word": self.target_word,
+            "time_seconds": 0,
+            "guesses": [],
+            "username": self.username,
+            "already_played": True,
+            "personal_stats": {
+                "total_games": 0,
+                "total_wins": 0,
+                "win_rate": 0,
+                "current_streak": self.streak,
+                "longest_streak": self.streak,
+                "avg_attempts": 0,
+                "attempts_distribution": {},
+            },
+            "global_stats": {},
+        }
+        self.push_screen(ResultScreen(result_data))
 
     def _start_game(self) -> None:
         """Start the game screen."""
