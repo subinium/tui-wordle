@@ -86,6 +86,7 @@ Guess the 5-letter word within 6 tries!
 [#818384]F1[/]      View my stats
 [#818384]F2[/]      Leaderboard
 [#818384]F3[/]      How to play
+[#818384]F4[/]      Settings
 
 [bold white]🔥 Streak[/]
 Play daily to build your streak!
