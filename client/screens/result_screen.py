@@ -171,7 +171,7 @@ class ResultScreen(ModalScreen):
         if won:
             lines.append(f"[bold #6aaa64]✓ {target}[/]")
         else:
-            lines.append(f"[#818384]The word was: [bold white]{target}[/][/]")
+            lines.append(f"[#787c7e]Better luck next time![/]")
         lines.append("")
 
         # Stats row
